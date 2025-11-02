@@ -29,13 +29,13 @@ def get_leaderboard(mode):
 @app.route("/submit", methods=["POST"])
 def submit_score():
     data = request.get_json()
-    name = data.get("name")
-    mode = data.get("mode")
-    score = data.get("score")
-    time = data.get("time")
-
-    if not all([name, mode, score, time]):
-        return jsonify({"status": "fail", "reason": "Missing fields"}), 400
+    try:
+        name = data["name"]
+        mode = data["mode"]
+        score = int(data["score"])
+        time = float(data["time"])
+    except (KeyError, ValueError, TypeError):
+        return jsonify({"status": "fail", "reason": "Invalid or missing fields"}), 400
 
     if score != 100:
         return jsonify({"status": "fail", "reason": "Score not perfect"}), 400
@@ -43,11 +43,9 @@ def submit_score():
     if mode not in leaderboards:
         return jsonify({"status": "fail", "reason": "Invalid mode"}), 400
 
-    # Only add if faster than existing times
     board = leaderboards[mode]
-    if len(board) < 3 or time < max([entry["time"] for entry in board]):
+    if len(board) < 3 or time < max(entry["time"] for entry in board):
         board.append({"name": name, "time": time})
-        # keep top 3 sorted
         leaderboards[mode] = sorted(board, key=lambda x: x["time"])[:3]
 
     return jsonify({"status": "success"})
