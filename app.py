@@ -1,50 +1,49 @@
 from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import os
 
 app = Flask(__name__)
-CORS(app, origins="*")
+CORS(app)
 
-leaderboards = {
-    "arithmetic": [],
-    "algebra": [],
-    "probability": []
-}
+# Get Render database URL
+db_url = os.environ.get("DATABASE_URL")
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-@app.route("/")
-def home():
-    return "Leaderboard API running!"
+db = SQLAlchemy(app)
 
-@app.route("/leaderboard/<mode>", methods=["GET"])
-def get_leaderboard(mode):
-    if mode not in leaderboards:
-        return jsonify({"status": "fail", "reason": "Invalid mode"}), 400
-    # Return sorted top 3 by time
-    sorted_list = sorted(leaderboards[mode], key=lambda x: x["time"])[:3]
-    return jsonify(sorted_list)
+# Define leaderboard table
+class Leaderboard(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    mode = db.Column(db.String(50), nullable=False)
+    time = db.Column(db.Float, nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+
+with app.app_context():
+    db.create_all()  # Create tables if not exist
 
 @app.route("/submit", methods=["POST"])
 def submit_score():
     data = request.get_json()
-    name = data.get("name")
-    mode = data.get("mode")
-    score = data.get("score")
-    time = data.get("time")
+    new_entry = Leaderboard(
+        name=data["name"],
+        mode=data["mode"],
+        time=data["time"],
+        score=data["score"]
+    )
+    db.session.add(new_entry)
+    db.session.commit()
+    return jsonify({"status": "success"})
 
-    if not (name and mode and score is not None and time is not None):
-        return jsonify({"status": "fail", "reason": "Missing fields"}), 400
-    if score != 100:
-        return jsonify({"status": "fail", "reason": "Score must be 100"}), 400
-    if mode not in leaderboards:
-        return jsonify({"status": "fail", "reason": "Invalid mode"}), 400
-
-    board = leaderboards[mode]
-    board.append({"name": name, "time": time})
-    board.sort(key=lambda x: x["time"])
-    leaderboards[mode] = board[:3]
-
-    return jsonify({"status": "success", "leaderboard": leaderboards[mode]})
+@app.route("/leaderboard/<mode>")
+def leaderboard(mode):
+    results = Leaderboard.query.filter_by(mode=mode).order_by(Leaderboard.time.asc()).limit(10).all()
+    return jsonify([
+        {"name": r.name, "time": r.time, "score": r.score}
+        for r in results
+    ])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
